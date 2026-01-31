@@ -1,0 +1,11 @@
+# Temporary cloud-init files
+.cloud-init-*.yaml
+
+# Editor files
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

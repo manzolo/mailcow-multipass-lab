@@ -1,0 +1,50 @@
+#cloud-config
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - bind9
+  - bind9utils
+  - bind9-doc
+  - dnsutils
+
+write_files:
+  - path: /etc/netplan/99-static.yaml
+    content: |
+      network:
+        version: 2
+        ethernets:
+          default:
+            match:
+              name: "e*"
+            dhcp4: false
+            addresses:
+              - 10.4.26.10/24
+            routes:
+              - to: default
+                via: 10.4.26.1
+            nameservers:
+              addresses:
+                - 127.0.0.1
+                - 8.8.8.8
+    permissions: '0644'
+
+runcmd:
+  # Apply static IP
+  - netplan apply
+
+  # Configure BIND to listen on all interfaces
+  - sed -i 's/listen-on-v6 { any; };/listen-on-v6 { none; };/' /etc/bind/named.conf.options
+
+  # Create zones directory
+  - mkdir -p /etc/bind/zones
+
+  # Set permissions
+  - chown -R bind:bind /etc/bind/zones
+
+  # Restart BIND
+  - systemctl restart bind9
+  - systemctl enable bind9
+
+final_message: "DNS Server ready after $UPTIME seconds"

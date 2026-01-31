@@ -1,0 +1,36 @@
+options {
+    directory "/var/cache/bind";
+
+    // Listen on all interfaces
+    listen-on { any; };
+    listen-on-v6 { none; };
+
+    // Allow queries from local network
+    allow-query { any; };
+    allow-recursion { 10.4.26.0/24; 127.0.0.0/8; };
+
+    // Forwarders for external DNS resolution
+    forwarders {
+        8.8.8.8;
+        8.8.4.4;
+    };
+
+    // DNSSEC validation
+    dnssec-validation auto;
+
+    // Hide version
+    version "not disclosed";
+
+    // Query logging (useful for debugging)
+    querylog yes;
+};
+
+// Logging configuration
+logging {
+    channel query_log {
+        file "/var/log/named/query.log" versions 3 size 5m;
+        severity info;
+        print-time yes;
+    };
+    category queries { query_log; };
+};

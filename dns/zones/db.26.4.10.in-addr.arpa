@@ -1,0 +1,16 @@
+$TTL    604800
+@       IN      SOA     ns1.lab. admin.lab. (
+                              2024010101         ; Serial (YYYYMMDDNN)
+                              604800             ; Refresh
+                              86400              ; Retry
+                              2419200            ; Expire
+                              604800 )           ; Negative Cache TTL
+
+; Name servers
+@       IN      NS      ns1.lab.
+
+; PTR records
+10      IN      PTR     ns1.lab.
+11      IN      PTR     mail.mars.lab.
+12      IN      PTR     mail.venus.lab.
+13      IN      PTR     mail.jupiter.lab.

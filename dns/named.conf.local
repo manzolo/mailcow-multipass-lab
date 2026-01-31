@@ -1,0 +1,27 @@
+// Local zone definitions for mail server lab
+
+// Forward zones
+zone "mars.lab" {
+    type master;
+    file "/etc/bind/zones/db.mars.lab";
+    allow-transfer { none; };
+};
+
+zone "venus.lab" {
+    type master;
+    file "/etc/bind/zones/db.venus.lab";
+    allow-transfer { none; };
+};
+
+zone "jupiter.lab" {
+    type master;
+    file "/etc/bind/zones/db.jupiter.lab";
+    allow-transfer { none; };
+};
+
+// Reverse zone for 10.4.26.0/24
+zone "26.4.10.in-addr.arpa" {
+    type master;
+    file "/etc/bind/zones/db.26.4.10.in-addr.arpa";
+    allow-transfer { none; };
+};

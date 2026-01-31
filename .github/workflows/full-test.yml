@@ -1,0 +1,168 @@
+name: Full Integration Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_all:
+        description: 'Deploy all mail servers (mars, venus, jupiter)'
+        required: false
+        default: 'false'
+        type: boolean
+      cleanup:
+        description: 'Cleanup VMs after test'
+        required: false
+        default: 'true'
+        type: boolean
+
+# This workflow requires a self-hosted runner with:
+# - Multipass installed and configured
+# - KVM/virtualization support
+# - At least 20GB RAM available
+# - At least 100GB disk space
+# - Label: 'multipass'
+
+jobs:
+  full-integration:
+    name: Full Mail Server Lab Test
+    runs-on: [self-hosted, multipass]
+    timeout-minutes: 120
+    env:
+      DEPLOY_ALL: ${{ inputs.deploy_all }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: System Info
+        run: |
+          echo "=== System Information ==="
+          uname -a
+          free -h
+          df -h
+          echo "=== Multipass Version ==="
+          multipass version
+
+      - name: Cleanup Previous Deployment
+        run: |
+          echo "Cleaning up any existing VMs..."
+          ./manager.sh destroy 2>/dev/null || true
+          sleep 10
+          multipass list
+
+      - name: Check Prerequisites
+        run: |
+          echo "=== Checking Prerequisites ==="
+          ./scripts/00-check-prerequisites.sh
+
+      - name: Deploy DNS Server
+        run: |
+          echo "=== Deploying DNS Server ==="
+          ./scripts/01-deploy-dns.sh <<< "y"
+
+          echo "=== Verifying DNS ==="
+          sleep 5
+          dig @10.4.26.10 mars.lab MX +short
+          dig @10.4.26.10 venus.lab A +short
+
+      - name: Deploy Mars Mail Server
+        run: |
+          echo "=== Deploying Mars Mail Server ==="
+          ./scripts/02-deploy-mars.sh <<< "y"
+
+          echo "=== Checking Mars Status ==="
+          multipass exec mars -- cat /var/log/mailcow-setup/status
+        timeout-minutes: 25
+
+      - name: Deploy Venus Mail Server
+        if: inputs.deploy_all == true
+        run: |
+          echo "=== Deploying Venus Mail Server ==="
+          ./scripts/03-deploy-venus.sh <<< "y"
+
+          echo "=== Checking Venus Status ==="
+          multipass exec venus -- cat /var/log/mailcow-setup/status
+        timeout-minutes: 25
+
+      - name: Deploy Jupiter Mail Server
+        if: inputs.deploy_all == true
+        run: |
+          echo "=== Deploying Jupiter Mail Server ==="
+          ./scripts/04-deploy-jupiter.sh <<< "y"
+
+          echo "=== Checking Jupiter Status ==="
+          multipass exec jupiter -- cat /var/log/mailcow-setup/status
+        timeout-minutes: 25
+
+      - name: Create Test Users
+        run: |
+          echo "=== Creating Test Users ==="
+          sleep 30  # Wait for services to stabilize
+          ./scripts/05-create-users.sh || echo "User creation may have partial failures"
+
+      - name: Run DNS Tests
+        run: |
+          echo "=== Running DNS Tests ==="
+          ./tests/test-dns.sh
+        continue-on-error: true
+
+      - name: Run SMTP Tests
+        run: |
+          echo "=== Running SMTP Tests ==="
+          ./tests/test-smtp.sh
+        continue-on-error: true
+
+      - name: Run Mail Flow Tests
+        if: inputs.deploy_all == true
+        run: |
+          echo "=== Running Mail Flow Tests ==="
+          ./tests/test-mail-flow.sh
+        continue-on-error: true
+
+      - name: Show Final Status
+        run: |
+          echo "=== Final Status ==="
+          ./manager.sh status
+
+          echo ""
+          echo "=== Access Information ==="
+          ./manager.sh info
+
+      - name: Test Webmail Access
+        run: |
+          echo "=== Testing Webmail Access ==="
+          curl -k -s -o /dev/null -w "Mars SOGo: %{http_code}\n" https://10.4.26.11/SOGo/ || true
+          if [ "$DEPLOY_ALL" = "true" ]; then
+            curl -k -s -o /dev/null -w "Venus SOGo: %{http_code}\n" https://10.4.26.12/SOGo/ || true
+            curl -k -s -o /dev/null -w "Jupiter SOGo: %{http_code}\n" https://10.4.26.13/SOGo/ || true
+          fi
+
+      - name: Test Admin UI Access
+        run: |
+          echo "=== Testing Admin UI Access ==="
+          curl -k -s -o /dev/null -w "Mars Admin: %{http_code}\n" https://10.4.26.11/ || true
+          if [ "$DEPLOY_ALL" = "true" ]; then
+            curl -k -s -o /dev/null -w "Venus Admin: %{http_code}\n" https://10.4.26.12/ || true
+            curl -k -s -o /dev/null -w "Jupiter Admin: %{http_code}\n" https://10.4.26.13/ || true
+          fi
+
+      - name: Collect Logs on Failure
+        if: failure()
+        run: |
+          echo "=== Collecting Logs ==="
+          for vm in dns-server mars venus jupiter; do
+            if multipass list | grep -q "^${vm}"; then
+              echo "--- Logs for $vm ---"
+              if [ "$vm" = "dns-server" ]; then
+                multipass exec $vm -- sudo journalctl -u named -n 50 --no-pager || true
+              else
+                multipass exec $vm -- cat /var/log/mailcow-setup/setup.log || true
+                multipass exec $vm -- docker ps -a 2>/dev/null || true
+              fi
+            fi
+          done
+
+      - name: Cleanup
+        if: always() && inputs.cleanup == true
+        run: |
+          echo "=== Cleanup ==="
+          ./manager.sh destroy || true
