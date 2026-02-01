@@ -44,9 +44,15 @@ update_status "cloning_mailcow"
 cd /opt
 if [ ! -d "mailcow-dockerized" ]; then
     log "Cloning Mailcow version: $MAILCOW_VERSION"
-    git clone --branch "$MAILCOW_VERSION" --depth 1 https://github.com/mailcow/mailcow-dockerized.git
+    # Clone master first (mailcow scripts need branch info), then checkout specific tag
+    git clone https://github.com/mailcow/mailcow-dockerized.git
+    cd mailcow-dockerized
+    git checkout "$MAILCOW_VERSION"
+    # Create local master branch at this tag so generate_config.sh works
+    git checkout -b master
+else
+    cd mailcow-dockerized
 fi
-cd mailcow-dockerized
 
 # Generate configuration
 update_status "generating_config"
