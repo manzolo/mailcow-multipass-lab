@@ -54,71 +54,10 @@ jobs:
           test -f dns/named.conf.local && echo "✓ named.conf.local"
           echo "All configuration files present"
 
-  integration-test:
-    name: Integration Test
-    runs-on: [self-hosted, multipass]
-    needs: lint
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
-    timeout-minutes: 60
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+  # Note: Full integration tests require a self-hosted runner with multipass
+  # See .github/workflows/full-test.yml for the complete test workflow
 
-      - name: Check Multipass
-        run: |
-          multipass version
-          multipass list || true
-
-      - name: Cleanup previous runs
-        run: |
-          echo "Cleaning up any existing VMs..."
-          ./manager.sh destroy || true
-          sleep 10
-
-      - name: Check prerequisites
-        run: ./scripts/00-check-prerequisites.sh
-
-      - name: Deploy DNS Server
-        run: |
-          echo "Deploying DNS server..."
-          ./scripts/01-deploy-dns.sh <<< "y"
-
-      - name: Test DNS
-        run: |
-          echo "Testing DNS resolution..."
-          sleep 10
-          dig @10.4.26.10 mars.lab MX +short
-          dig @10.4.26.10 venus.lab MX +short
-          dig @10.4.26.10 jupiter.lab MX +short
-
-      - name: Deploy Mars Mail Server
-        run: |
-          echo "Deploying Mars mail server..."
-          ./scripts/02-deploy-mars.sh <<< "y"
-        timeout-minutes: 20
-
-      - name: Verify Mars
-        run: |
-          echo "Verifying Mars deployment..."
-          multipass exec mars -- cat /var/log/mailcow-setup/status
-          multipass exec mars -- docker ps --format '{{.Names}}' | head -10
-
-      - name: Run DNS Tests
-        run: ./tests/test-dns.sh || true
-
-      - name: Run SMTP Tests
-        run: ./tests/test-smtp.sh || true
-
-      - name: Show Status
-        run: ./manager.sh status
-
-      - name: Cleanup
-        if: always()
-        run: |
-          echo "Cleaning up..."
-          ./manager.sh destroy || true
-
-  # Quick smoke test that can run on standard runners (limited)
+  # Quick smoke test that can run on standard runners
   smoke-test:
     name: Smoke Test (Syntax Only)
     runs-on: ubuntu-latest
