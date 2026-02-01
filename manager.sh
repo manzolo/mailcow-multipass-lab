@@ -40,9 +40,10 @@ usage() {
     echo "  shell <vm>         Open shell in VM"
     echo ""
     echo -e "${YELLOW}Testing Commands:${NC}"
-    echo "  test               Run all tests (DNS, SMTP, mail flow)"
+    echo "  test               Run all tests (DNS, SMTP, users, mail flow)"
     echo "  test dns           Run DNS tests only"
     echo "  test smtp          Run SMTP tests only"
+    echo "  test users         Run mailbox authentication tests"
     echo "  test mail          Run mail flow tests only"
     echo ""
     echo -e "${YELLOW}Configuration Commands:${NC}"
@@ -295,18 +296,24 @@ cmd_test() {
         smtp)
             "$SCRIPT_DIR/tests/test-smtp.sh"
             ;;
+        users)
+            "$SCRIPT_DIR/tests/test-users.sh"
+            ;;
         mail)
             "$SCRIPT_DIR/tests/test-mail-flow.sh"
             ;;
         *)
             # Run all tests
-            echo -e "${YELLOW}[1/3] DNS Tests${NC}"
+            echo -e "${YELLOW}[1/4] DNS Tests${NC}"
             "$SCRIPT_DIR/tests/test-dns.sh" || true
             echo ""
-            echo -e "${YELLOW}[2/3] SMTP Tests${NC}"
+            echo -e "${YELLOW}[2/4] SMTP Tests${NC}"
             "$SCRIPT_DIR/tests/test-smtp.sh" || true
             echo ""
-            echo -e "${YELLOW}[3/3] Mail Flow Tests${NC}"
+            echo -e "${YELLOW}[3/4] Mailbox Tests${NC}"
+            "$SCRIPT_DIR/tests/test-users.sh" || true
+            echo ""
+            echo -e "${YELLOW}[4/4] Mail Flow Tests${NC}"
             "$SCRIPT_DIR/tests/test-mail-flow.sh" || true
             ;;
     esac

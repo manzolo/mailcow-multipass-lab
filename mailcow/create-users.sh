@@ -13,8 +13,36 @@ USERS=(
 
 LOG_FILE="/var/log/mailcow-setup/users.log"
 
+# Colors for output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+CYAN='\033[0;36m'
+DIM='\033[2m'
+NC='\033[0m'
+
+# Symbols
+CHECK="${GREEN}✓${NC}"
+CROSS="${RED}✗${NC}"
+ARROW="${CYAN}→${NC}"
+
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_FILE"
+}
+
+step() {
+    echo -e "    ${ARROW} $1"
+    log "$1"
+}
+
+step_done() {
+    echo -e "    ${CHECK} $1"
+    log "Done: $1"
+}
+
+step_fail() {
+    echo -e "    ${CROSS} $1"
+    log "FAILED: $1"
 }
 
 # Get API key from mailcow.conf or api_key.txt
@@ -24,7 +52,7 @@ if [ -z "$API_KEY" ]; then
 fi
 
 if [ -z "$API_KEY" ]; then
-    log "ERROR: Could not find API key in mailcow.conf or api_key.txt"
+    step_fail "Could not find API key"
     exit 1
 fi
 
@@ -36,17 +64,26 @@ log "Creating users for domain: $DOMAIN"
 log "Using API at: $API_URL"
 
 # Wait for API to be ready
+step "Waiting for API..."
+API_READY=false
 for i in {1..30}; do
-    if curl $CURL_OPTS -o /dev/null -w "%{http_code}" "https://127.0.0.1/" | grep -q "200\|301\|302"; then
-        log "API is ready"
+    if curl $CURL_OPTS -o /dev/null -w "%{http_code}" "https://127.0.0.1/" 2>/dev/null | grep -q "200\|301\|302"; then
+        API_READY=true
         break
     fi
     log "Waiting for API... ($i/30)"
     sleep 10
 done
 
+if [ "$API_READY" = true ]; then
+    step_done "API ready"
+else
+    step_fail "API not responding"
+    exit 1
+fi
+
 # Add domain first
-log "Adding domain: $DOMAIN"
+step "Adding domain ${DOMAIN}..."
 DOMAIN_RESULT=$(curl $CURL_OPTS -X POST "${API_URL}/add/domain" \
     -H "Content-Type: application/json" \
     -H "X-API-Key: ${API_KEY}" \
@@ -64,16 +101,27 @@ DOMAIN_RESULT=$(curl $CURL_OPTS -X POST "${API_URL}/add/domain" \
         \"backupmx\": 0,
         \"relay_all_recipients\": 0,
         \"restart_sogo\": 1
-    }")
+    }" 2>/dev/null)
 
 log "Domain add result: $DOMAIN_RESULT"
 
+if echo "$DOMAIN_RESULT" | grep -q '"type":"success"'; then
+    step_done "Domain ${DOMAIN} added"
+elif echo "$DOMAIN_RESULT" | grep -q "domain_exists"; then
+    step_done "Domain ${DOMAIN} already exists"
+else
+    step_fail "Failed to add domain ${DOMAIN}"
+    log "Error: $DOMAIN_RESULT"
+fi
+
 # Create each user
+CREATED_USERS=()
 for USER_ENTRY in "${USERS[@]}"; do
     USERNAME="${USER_ENTRY%%:*}"
     PASSWORD="${USER_ENTRY##*:}"
     EMAIL="${USERNAME}@${DOMAIN}"
 
+    step "Creating user ${EMAIL}..."
     log "Creating user: $EMAIL"
 
     USER_RESULT=$(curl $CURL_OPTS -X POST "${API_URL}/add/mailbox" \
@@ -90,17 +138,20 @@ for USER_ENTRY in "${USERS[@]}"; do
             \"force_pw_update\": 0,
             \"tls_enforce_in\": 0,
             \"tls_enforce_out\": 0
-        }")
+        }" 2>/dev/null)
 
     log "User $EMAIL result: $USER_RESULT"
+
+    if echo "$USER_RESULT" | grep -q '"type":"success"'; then
+        step_done "${EMAIL} created"
+        CREATED_USERS+=("$EMAIL")
+    elif echo "$USER_RESULT" | grep -q "object_exists"; then
+        step_done "${EMAIL} already exists"
+        CREATED_USERS+=("$EMAIL")
+    else
+        step_fail "Failed to create ${EMAIL}"
+        log "Error: $USER_RESULT"
+    fi
 done
 
-log ""
-log "============================================"
-log "Users created for $DOMAIN:"
-for USER_ENTRY in "${USERS[@]}"; do
-    USERNAME="${USER_ENTRY%%:*}"
-    PASSWORD="${USER_ENTRY##*:}"
-    log "  - ${USERNAME}@${DOMAIN} (password: ${PASSWORD})"
-done
-log "============================================"
+log "Users created for $DOMAIN: ${CREATED_USERS[*]}"
